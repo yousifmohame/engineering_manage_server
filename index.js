@@ -17,6 +17,9 @@ app.use("/api/safe", safeRoutes);
 app.use('/api/expenses', require('./src/routes/expense.routes'));
 app.use('/api/gold', require('./src/routes/gold.routes'));
 app.use('/api/banks', require('./src/routes/bank.routes'));
+app.use('/api/partnership', require('./src/routes/partnership.routes'));
+app.use('/api/nazmi', require('./src/routes/nazmi.routes'));
+app.use('/api/youssef', require('./src/routes/youssef.routes'));
 // مسار تجريبي للتأكد من عمل الخادم
 app.get("/", (req, res) => {
   res.send("خادم مديرتي المالية يعمل بنجاح!");

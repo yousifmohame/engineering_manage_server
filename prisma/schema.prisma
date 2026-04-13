@@ -153,3 +153,79 @@ model BankTransaction {
   bankAccountId String
   bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
 }
+
+model PartnershipExpense {
+  id          String   @id @default(uuid())
+  type        String // "أرض" أو "بناء"
+  amount      Float
+  currency    String   @default("SAR")
+  paidBy      String // "أنا" أو "أخي"
+  date        DateTime
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// شراكة المكتب الهندسي (نظمي)
+model NazmiPartnership {
+  id             String             @id @default(uuid())
+  capital        Float              @default(1000000) // رأس المال
+  reserve        Float              @default(50000) // الاحتياطي
+  mySharePercent Float              @default(50) // نصيبي %
+  partnerShare   Float              @default(50) // نصيب نظمي %
+  transactions   NazmiTransaction[] // الحركات (إيراد/مصروف/توزيع)
+  updatedAt      DateTime           @updatedAt
+}
+
+model NazmiTransaction {
+  id            String           @id @default(uuid())
+  type          String // "إيراد" | "مصروف" | "توزيع"
+  category      String // "بنك", "كاش", "مكتب", "رواتب", "أرباح"
+  amount        Float
+  currency      String           @default("SAR")
+  date          DateTime
+  description   String
+  reference     String? // رقم الفاتورة أو المرجع
+  isRecurring   Boolean          @default(false) // للمصاريف المتكررة
+  partnershipId String
+  partnership   NazmiPartnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  createdAt     DateTime         @default(now())
+}
+
+// إعدادات بوابة يوسف
+model YoussefPartnership {
+  id                     String   @id @default(uuid())
+  youssefSharePercentage Float    @default(20)
+  useDynamicShare        Boolean  @default(false)
+  partnerEmail           String?
+  companyName            String   @default("شركة عمارة طيبة")
+  establishmentDate      DateTime @default(now())
+  primaryCurrency        String   @default("SAR")
+  showCapital            Boolean  @default(true)
+  showProfits            Boolean  @default(true)
+  showBankShare          Boolean  @default(true)
+  showAiAnalysis         Boolean  @default(true)
+  updatedAt              DateTime @updatedAt
+}
+
+// تسويات (مدفوعات) يوسف
+model YoussefSettlement {
+  id          String   @id @default(uuid())
+  amount      Float
+  currency    String   @default("SAR")
+  date        DateTime
+  description String
+  createdAt   DateTime @default(now())
+}
+
+// السلف بينك وبين يوسف
+model YoussefLoan {
+  id            String   @id @default(uuid())
+  amount        Float
+  currency      String   @default("SAR")
+  fromPartner   String
+  toPartner     String
+  description   String
+  repaymentDate DateTime
+  createdAt     DateTime @default(now())
+}
