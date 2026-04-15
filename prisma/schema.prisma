@@ -129,29 +129,33 @@ model File {
 
 model BankAccount {
   id              String            @id @default(uuid())
-  bankName        String // اسم البنك
-  accountName     String // اسم الحساب
+  bankName        String
+  accountName     String
   currency        String            @default("EGP")
   balance         Float             @default(0)
   accountNumber   String?
   iban            String?
   swiftCode       String?
   depositFees     Float             @default(0)
-  exchangeRateUSD Float             @default(0.2667) // سعر صرف SAR لـ USD
-  exchangeRateEGP Float             @default(12.8) // سعر صرف SAR لـ EGP
+  exchangeRateUSD Float             @default(0.2667)
+  exchangeRateEGP Float             @default(12.8)
   transactions    BankTransaction[]
   updatedAt       DateTime          @updatedAt
   createdAt       DateTime          @default(now())
 }
 
 model BankTransaction {
-  id            String      @id @default(uuid())
-  type          String // "إيداع" أو "سحب"
-  amount        Float
-  description   String
-  date          DateTime    @default(now())
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  id              String      @id @default(uuid())
+  type            String // إيداع / سحب
+  amount          Float
+  description     String
+  date            DateTime
+  referenceNumber String? // ✨ جديد: رقم المرجع (رقم الشيك أو التحويل)
+  attachment      String? // ✨ جديد: صورة الإيصال المرفق
+  transactionHash String?     @unique // بصمة الذكاء الاصطناعي
+  bankAccountId   String
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime    @default(now())
 }
 
 model PartnershipExpense {
@@ -178,18 +182,20 @@ model NazmiPartnership {
 }
 
 model NazmiTransaction {
-  id            String           @id @default(uuid())
-  type          String // "إيراد" | "مصروف" | "توزيع"
-  category      String // "بنك", "كاش", "مكتب", "رواتب", "أرباح"
-  amount        Float
-  currency      String           @default("SAR")
-  date          DateTime
-  description   String
-  reference     String? // رقم الفاتورة أو المرجع
-  isRecurring   Boolean          @default(false) // للمصاريف المتكررة
-  partnershipId String
-  partnership   NazmiPartnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
-  createdAt     DateTime         @default(now())
+  id             String           @id @default(uuid())
+  type           String
+  category       String // سيحتفظ بالتصنيفات مفصولة بفاصلة مثل: "مكتب,ايجار المقر"
+  amount         Float
+  currency       String           @default("SAR")
+  date           DateTime
+  description    String
+  reference      String?
+  isRecurring    Boolean          @default(false)
+  recurrenceRate String? // معدل التكرار: شهري، أسبوعي، سنوي
+  attachment     String? // مسار الملف المرفق
+  partnershipId  String
+  partnership    NazmiPartnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
 }
 
 // إعدادات بوابة يوسف
@@ -218,14 +224,26 @@ model YoussefSettlement {
   createdAt   DateTime @default(now())
 }
 
-// السلف بينك وبين يوسف
+// 1. تحديث جدول السلف (اجعل repaymentDate اختياري وأضف حقل الخصم)
 model YoussefLoan {
-  id            String   @id @default(uuid())
-  amount        Float
-  currency      String   @default("SAR")
-  fromPartner   String
-  toPartner     String
-  description   String
-  repaymentDate DateTime
-  createdAt     DateTime @default(now())
+  id                    String    @id @default(uuid())
+  amount                Float
+  currency              String    @default("SAR")
+  fromPartner           String
+  toPartner             String
+  description           String
+  repaymentDate         DateTime? // أضفنا علامة الاستفهام ليكون اختيارياً
+  deductFromLiquidation Boolean   @default(false) // حقل جديد للخصم عند التصفية
+  createdAt             DateTime  @default(now())
+}
+
+// 2. إضافة جدول جديد كلياً لتسجيل مساهمات يوسف في رأس المال
+model YoussefContribution {
+  id          String   @id @default(uuid())
+  amount      Float // المبلغ بالعملة الأصلية (مثال: 100 ألف جنيه)
+  currency    String   @default("SAR") // العملة (EGP, USD, SAR)
+  amountInSAR Float // القيمة الفعلية التي تم تثبيتها بالريال وقت الدفع
+  date        DateTime @default(now())
+  description String
+  createdAt   DateTime @default(now())
 }

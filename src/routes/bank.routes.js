@@ -1,19 +1,46 @@
-// src/routes/bank.routes.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const bankController = require('../controllers/bank.controller');
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
-// مسار جلب الحسابات مع أرصدتها وحركاتها
-router.get('/', bankController.getAccounts);
+const bankController = require("../controllers/bank.controller");
 
-// مسار إنشاء حساب بنكي جديد
-router.post('/', bankController.createAccount);
+const uploadDir = path.join(__dirname, "../../uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// مسار إضافة حركة مالية (إيداع/سحب) للحساب
-router.post('/transaction', bankController.addTransaction);
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+const upload = multer({ storage });
 
-// مسار حذف حساب بنكي (سيقوم بحذف الحركات المرتبطة به تلقائياً)
-router.delete('/:id', bankController.deleteAccount);
+router.get("/", bankController.getAccounts);
+router.post("/", bankController.createAccount);
+router.delete("/:id", bankController.deleteAccount);
 
-// تصدير المسارات لاستخدامها في الخادم
+// مسارات الحركات المالية (شاملة المرفقات)
+router.post(
+  "/transaction",
+  upload.single("attachment"),
+  bankController.addTransaction,
+);
+router.put(
+  "/transaction/:id",
+  upload.single("attachment"),
+  bankController.updateTransaction,
+);
+router.delete("/transaction/:id", bankController.deleteTransaction);
+
+// الذكاء الاصطناعي
+router.post(
+  "/analyze-statement",
+  upload.single("statement"),
+  bankController.analyzeStatement,
+);
+
 module.exports = router;

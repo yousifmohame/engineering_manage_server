@@ -76,39 +76,60 @@ exports.updateSettings = async (req, res) => {
 exports.addTransaction = async (req, res) => {
   try {
     const data = req.body;
+    let attachmentUrl = null;
+
+    if (req.file) {
+      attachmentUrl = `/uploads/${req.file.filename}`;
+    }
+
     const transaction = await prisma.nazmiTransaction.create({
       data: {
-        ...data,
+        type: data.type,
+        category: data.category, // قادمة كنص مفصول بفاصلة
         amount: parseFloat(data.amount),
+        currency: data.currency || "SAR",
         date: new Date(data.date),
-        isRecurring: data.isRecurring || false,
+        description: data.description,
+        isRecurring: data.isRecurring === "true", // تحويل النص إلى Boolean
+        recurrenceRate:
+          data.isRecurring === "true" ? data.recurrenceRate : null,
+        attachment: attachmentUrl,
+        partnershipId: data.partnershipId,
       },
     });
     res.status(201).json(transaction);
   } catch (error) {
-    console.error("Error adding Nazmi transaction:", error);
-    res.status(500).json({ error: "خطأ في الإضافة" });
+    console.error(error);
+    res.status(500).json({ error: "خطأ في إضافة الحركة" });
   }
 };
 
-// 4. تعديل حركة
 exports.updateTransaction = async (req, res) => {
   try {
-    const { id } = req.params;
     const data = req.body;
+    const updateData = {
+      type: data.type,
+      category: data.category,
+      amount: parseFloat(data.amount),
+      date: new Date(data.date),
+      description: data.description,
+      isRecurring: data.isRecurring === "true",
+      recurrenceRate: data.isRecurring === "true" ? data.recurrenceRate : null,
+      partnershipId: data.partnershipId,
+    };
+
+    if (req.file) {
+      updateData.attachment = `/uploads/${req.file.filename}`;
+    }
+
     const transaction = await prisma.nazmiTransaction.update({
-      where: { id },
-      data: {
-        ...data,
-        amount: parseFloat(data.amount),
-        date: new Date(data.date),
-        isRecurring: data.isRecurring || false,
-      },
+      where: { id: req.params.id },
+      data: updateData,
     });
     res.json(transaction);
   } catch (error) {
-    console.error("Error updating Nazmi transaction:", error);
-    res.status(500).json({ error: "خطأ في التعديل" });
+    console.error(error);
+    res.status(500).json({ error: "خطأ في تعديل الحركة" });
   }
 };
 

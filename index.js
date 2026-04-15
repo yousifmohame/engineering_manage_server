@@ -7,7 +7,8 @@ const PORT = process.env.PORT || 5001;
 
 app.use(cors());
 app.use(express.json());
-
+// أضف هذا السطر لخدمة الملفات المرفوعة
+app.use('/uploads', express.static('uploads'));
 // --- مسارات الـ API (Routes) ---
 // استدعاء مسار الخزنة
 const safeRoutes = require("./src/routes/safe.routes");
