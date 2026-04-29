@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // تذكر أننا أزلنا رابط الـ URL من هنا وأضفناه في ملف prisma.config.ts
+  // تأكد من وجود الرابط في ملف env أو prisma.config.ts
 }
 
 // ---------------------------------------------------------
@@ -21,229 +21,164 @@ model User {
 }
 
 // ---------------------------------------------------------
-// 2. جداول الخزنة الشخصية والذهب (أول ما سنعمل عليه)
+// 2. الحسابات المالية المركزية (تدمج البنوك والخزنة)
 // ---------------------------------------------------------
-model SafeTransaction {
-  id        String   @id @default(uuid())
-  type      String // "إيداع" أو "سحب"
-  amount    Float
-  currency  String   @default("SAR")
-  assetType String   @default("كاش")
-  reason    String
-  date      DateTime @default(now())
+model FinancialAccount {
+  id       String @id @default(uuid())
+  name     String // اسم الحساب (مثال: خزنة البيت، البنك الأهلي، CIB)
+  type     String // نوع الحساب: "SAFE" (خزنة)، "BANK" (بنك)
+  currency String @default("SAR") // العملة الافتراضية للحساب
+  balance  Float  @default(0) // الرصيد الحالي
+
+  // بيانات خاصة بالبنوك (تكون فارغة إذا كان الحساب خزنة)
+  accountNumber String?
+  iban          String?
+  swiftCode     String?
+
+  // ✨ تحديث: العلاقات مع المعاملات (المسحوبة والمودعة)
+  transactions Transaction[] @relation("AccountTransactions") // المعاملات العادية والمسحوبات
+  transfersIn  Transaction[] @relation("IncomingTransfers") // التحويلات الواردة لهذا الحساب
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// 3. المعاملات المالية المركزية (الواردات، المصروفات، والتحويلات)
+// ---------------------------------------------------------
+model Transaction {
+  id   String @id @default(uuid())
+  type String // "INCOME" (إيراد), "EXPENSE" (مصروف), "TRANSFER" (تحويل)
+
+  amount   Float
+  currency String @default("SAR")
+
+  exchangeRate Float  @default(1)
+  baseAmount   Float?
+
+  date        DateTime @default(now())
+  description String
+  category    String? // سيُخزن هنا نوع المصروف (مثال: "أرض" أو "بناء")
+  paidBy      String? // ✨ جديد: سيُخزن هنا من دفع (مثال: "أنا" أو "أخي")
+
+  referenceNumber String?
+  attachmentUrl   String?
+  transactionHash String? @unique
+
+  // ✨ تحديث: أضفنا علامة الاستفهامة (?) لنجعل الحساب اختيارياً في حالة الدفع من الجيب الخاص
+  accountId String?
+  account   FinancialAccount? @relation("AccountTransactions", fields: [accountId], references: [id])
+
+  toAccountId String?
+  toAccount   FinancialAccount? @relation("IncomingTransfers", fields: [toAccountId], references: [id])
+
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id])
+
+  partnershipId String?
+  partnership   Partnership? @relation(fields: [partnershipId], references: [id])
+
   createdAt DateTime @default(now())
 }
 
-model GoldInvestment {
-  id       String   @id @default(uuid())
-  type     String   @default("سبيكة") // سبيكة، جنيه ذهب، مشغولات
-  karat    Int      @default(24) // 24, 21, 18
-  weight   Float // الوزن بالجرام
-  buyPrice Float // إجمالي مبلغ الشراء
-  date     DateTime @default(now())
+// ---------------------------------------------------------
+// 4. إدارة الأصول والذهب
+// ---------------------------------------------------------
+model Asset {
+  id          String   @id @default(uuid())
+  type        String // "GOLD", "OTHER"
+  subType     String? // سبيكة، جنيه ذهب، مشغولات
+  karat       Int?     @default(24)
+  weight      Float? // الوزن بالجرام
+  buyPrice    Float // إجمالي مبلغ الشراء
+  date        DateTime @default(now())
+  description String?
 }
 
 // ---------------------------------------------------------
-// 3. جداول العقارات وملحقاتها
+// 5. العقارات وملحقاتها
 // ---------------------------------------------------------
 model Property {
-  id           String        @id @default(uuid())
-  name         String
-  location     String?
-  totalPrice   Float
-  installments Installment[] // العلاقة مع جدول الأقساط
-  payments     Payment[] // العلاقة مع جدول المدفوعات
-  files        File[] // العلاقة مع الملفات
-  createdAt    DateTime      @default(now())
+  id         String  @id @default(uuid())
+  name       String
+  location   String?
+  totalPrice Float
+
+  installments Installment[]
+  files        File[]
+  transactions Transaction[] // المدفوعات المرتبطة بالعقار
+
+  createdAt DateTime @default(now())
 }
 
-// جدول الأقساط (كان مفقوداً)
 model Installment {
   id         String   @id @default(uuid())
   amount     Float
   dueDate    DateTime
   isPaid     Boolean  @default(false)
   propertyId String
-  property   Property @relation(fields: [propertyId], references: [id])
-}
-
-// جدول المدفوعات (كان مفقوداً)
-model Payment {
-  id         String   @id @default(uuid())
-  amount     Float
-  date       DateTime @default(now())
-  propertyId String
-  property   Property @relation(fields: [propertyId], references: [id])
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 }
 
 // ---------------------------------------------------------
-// 4. جداول الشراكات وملحقاتها
+// 6. الشراكات (شراكة نظمي، يوسف، وأي شراكة مستقبلية)
 // ---------------------------------------------------------
 model Partnership {
-  id            String         @id @default(uuid())
-  name          String
-  partners      Partner[]
-  distributions Distribution[] // العلاقة مع التوزيعات
-  expenses      Expense[]
+  id                String   @id @default(uuid())
+  name              String // اسم الشراكة
+  companyName       String?
+  establishmentDate DateTime @default(now())
+  primaryCurrency   String   @default("SAR")
+
+  capital Float @default(0) // رأس المال
+  reserve Float @default(0) // الاحتياطي
+
+  showCapital    Boolean @default(true)
+  showProfits    Boolean @default(true)
+  showAiAnalysis Boolean @default(true)
+
+  partners     Partner[]
+  transactions Transaction[] // الإيرادات والمصروفات الخاصة بالشراكة
+  loans        Loan[] // السلف المرتبطة
 }
 
 model Partner {
   id            String      @id @default(uuid())
   name          String
-  sharePercent  Float
+  email         String?
+  sharePercent  Float // نسبة الشريك (مثلاً 50%)
   partnershipId String
-  partnership   Partnership @relation(fields: [partnershipId], references: [id])
+  partnership   Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
 }
 
-// جدول التوزيعات (كان مفقوداً)
-model Distribution {
-  id            String      @id @default(uuid())
-  totalAmount   Float
-  currency      String      @default("SAR")
-  description   String?
-  date          DateTime    @default(now())
-  partnershipId String
-  partnership   Partnership @relation(fields: [partnershipId], references: [id])
-}
-
-model Expense {
-  id            String       @id @default(uuid())
-  amount        Float
-  category      String
-  description   String?
-  date          DateTime     @default(now())
-  partnershipId String?
-  partnership   Partnership? @relation(fields: [partnershipId], references: [id])
-}
-
-// ---------------------------------------------------------
-// 5. جدول الملفات العامة
-// ---------------------------------------------------------
-model File {
-  id         String    @id @default(uuid())
-  name       String
-  url        String
-  propertyId String?
-  property   Property? @relation(fields: [propertyId], references: [id])
-}
-
-model BankAccount {
-  id              String            @id @default(uuid())
-  bankName        String
-  accountName     String
-  currency        String            @default("EGP")
-  balance         Float             @default(0)
-  accountNumber   String?
-  iban            String?
-  swiftCode       String?
-  depositFees     Float             @default(0)
-  exchangeRateUSD Float             @default(0.2667)
-  exchangeRateEGP Float             @default(12.8)
-  transactions    BankTransaction[]
-  updatedAt       DateTime          @updatedAt
-  createdAt       DateTime          @default(now())
-}
-
-model BankTransaction {
-  id              String      @id @default(uuid())
-  type            String // إيداع / سحب
-  amount          Float
-  description     String
-  date            DateTime
-  referenceNumber String? // ✨ جديد: رقم المرجع (رقم الشيك أو التحويل)
-  attachment      String? // ✨ جديد: صورة الإيصال المرفق
-  transactionHash String?     @unique // بصمة الذكاء الاصطناعي
-  bankAccountId   String
-  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
-  createdAt       DateTime    @default(now())
-}
-
-model PartnershipExpense {
-  id          String   @id @default(uuid())
-  type        String // "أرض" أو "بناء"
-  amount      Float
-  currency    String   @default("SAR")
-  paidBy      String // "أنا" أو "أخي"
-  date        DateTime
-  description String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-// شراكة المكتب الهندسي (نظمي)
-model NazmiPartnership {
-  id             String             @id @default(uuid())
-  capital        Float              @default(1000000) // رأس المال
-  reserve        Float              @default(50000) // الاحتياطي
-  mySharePercent Float              @default(50) // نصيبي %
-  partnerShare   Float              @default(50) // نصيب نظمي %
-  transactions   NazmiTransaction[] // الحركات (إيراد/مصروف/توزيع)
-  updatedAt      DateTime           @updatedAt
-}
-
-model NazmiTransaction {
-  id             String           @id @default(uuid())
-  type           String
-  category       String // سيحتفظ بالتصنيفات مفصولة بفاصلة مثل: "مكتب,ايجار المقر"
-  amount         Float
-  currency       String           @default("SAR")
-  date           DateTime
-  description    String
-  reference      String?
-  isRecurring    Boolean          @default(false)
-  recurrenceRate String? // معدل التكرار: شهري، أسبوعي، سنوي
-  attachment     String? // مسار الملف المرفق
-  partnershipId  String
-  partnership    NazmiPartnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
-  createdAt      DateTime         @default(now())
-}
-
-// إعدادات بوابة يوسف
-model YoussefPartnership {
-  id                     String   @id @default(uuid())
-  youssefSharePercentage Float    @default(20)
-  useDynamicShare        Boolean  @default(false)
-  partnerEmail           String?
-  companyName            String   @default("شركة عمارة طيبة")
-  establishmentDate      DateTime @default(now())
-  primaryCurrency        String   @default("SAR")
-  showCapital            Boolean  @default(true)
-  showProfits            Boolean  @default(true)
-  showBankShare          Boolean  @default(true)
-  showAiAnalysis         Boolean  @default(true)
-  updatedAt              DateTime @updatedAt
-}
-
-// تسويات (مدفوعات) يوسف
-model YoussefSettlement {
-  id          String   @id @default(uuid())
-  amount      Float
-  currency    String   @default("SAR")
-  date        DateTime
-  description String
-  createdAt   DateTime @default(now())
-}
-
-// 1. تحديث جدول السلف (اجعل repaymentDate اختياري وأضف حقل الخصم)
-model YoussefLoan {
+// السلف والمساهمات بين الشركاء
+model Loan {
   id                    String    @id @default(uuid())
   amount                Float
   currency              String    @default("SAR")
-  fromPartner           String
-  toPartner             String
+  type                  String // "LOAN" (سلفة) أو "CONTRIBUTION" (مساهمة رأس مال)
+  fromPartner           String // الشريك المانح
+  toPartner             String // الشريك المستفيد
   description           String
-  repaymentDate         DateTime? // أضفنا علامة الاستفهام ليكون اختيارياً
-  deductFromLiquidation Boolean   @default(false) // حقل جديد للخصم عند التصفية
-  createdAt             DateTime  @default(now())
+  repaymentDate         DateTime?
+  deductFromLiquidation Boolean   @default(false) // الخصم عند التصفية
+
+  partnershipId String?
+  partnership   Partnership? @relation(fields: [partnershipId], references: [id])
+
+  createdAt DateTime @default(now())
 }
 
-// 2. إضافة جدول جديد كلياً لتسجيل مساهمات يوسف في رأس المال
-model YoussefContribution {
-  id          String   @id @default(uuid())
-  amount      Float // المبلغ بالعملة الأصلية (مثال: 100 ألف جنيه)
-  currency    String   @default("SAR") // العملة (EGP, USD, SAR)
-  amountInSAR Float // القيمة الفعلية التي تم تثبيتها بالريال وقت الدفع
-  date        DateTime @default(now())
-  description String
-  createdAt   DateTime @default(now())
+// ---------------------------------------------------------
+// 7. إدارة الملفات العامة
+// ---------------------------------------------------------
+model File {
+  id   String @id @default(uuid())
+  name String
+  url  String
+
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }

@@ -1,57 +1,104 @@
-const { PrismaClient } = require('@prisma/client');
-const { Pool } = require('pg');
-const { PrismaPg } = require('@prisma/adapter-pg');
+const { PrismaClient } = require("@prisma/client");
+const { Pool } = require("pg");
+const { PrismaPg } = require("@prisma/adapter-pg");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-exports.getGold = async (req, res) => {
+// 1. جلب استثمارات الذهب
+exports.getGoldInvestments = async (req, res) => {
   try {
-    const gold = await prisma.goldInvestment.findMany({ orderBy: { date: 'desc' } });
-    
-    const totalWeight = gold.reduce((sum, item) => sum + item.weight, 0);
-    const totalInvestment = gold.reduce((sum, item) => sum + item.buyPrice, 0);
-    const avgPrice = totalWeight > 0 ? (totalInvestment / totalWeight).toFixed(2) : 0;
+    const assets = await prisma.asset.findMany({
+      where: { type: "GOLD" },
+      orderBy: { date: "desc" },
+    });
 
-    res.status(200).json({ gold, summary: { totalWeight, totalInvestment, avgPrice } });
+    // ترجمة البيانات للواجهة الأمامية
+    const formattedAssets = assets.map(asset => ({
+      ...asset,
+      itemType: asset.subType, // الواجهة تتوقع itemType
+      notes: asset.description  // الواجهة تتوقع notes
+    }));
+
+    const totalWeight = assets.reduce((sum, a) => sum + (a.weight || 0), 0);
+    const totalCost = assets.reduce((sum, a) => sum + a.buyPrice, 0);
+
+    res.json({
+      investments: formattedAssets,
+      summary: { totalWeight, totalCost }
+    });
   } catch (error) {
-    res.status(500).json({ error: 'خطأ في جلب بيانات الذهب' });
+    console.error("Error fetching gold:", error);
+    res.status(500).json({ error: "خطأ في جلب بيانات الذهب" });
   }
 };
 
+// 2. إضافة ذهب جديد
 exports.addGold = async (req, res) => {
   try {
-    const { type, karat, weight, buyPrice, date } = req.body;
-    const newGold = await prisma.goldInvestment.create({
-      data: { type, karat: parseInt(karat), weight: parseFloat(weight), buyPrice: parseFloat(buyPrice), date: new Date(date) }
+    const data = req.body;
+    const newAsset = await prisma.asset.create({
+      data: {
+        type: "GOLD",
+        subType: data.itemType, // سبيكة، جنيه، إلخ
+        karat: parseInt(data.karat) || 24,
+        weight: parseFloat(data.weight),
+        buyPrice: parseFloat(data.buyPrice),
+        date: new Date(data.date),
+        description: data.notes
+      }
     });
-    res.status(201).json(newGold);
+
+    res.status(201).json({
+      ...newAsset,
+      itemType: newAsset.subType,
+      notes: newAsset.description
+    });
   } catch (error) {
-    res.status(500).json({ error: 'خطأ في إضافة السجل' });
+    console.error("Error adding gold:", error);
+    res.status(500).json({ error: "خطأ في إضافة الذهب" });
   }
 };
 
+// 4. تعديل بيانات الذهب
 exports.updateGold = async (req, res) => {
   try {
     const { id } = req.params;
-    const { type, karat, weight, buyPrice, date } = req.body;
-    const updated = await prisma.goldInvestment.update({
-      where: { id },
-      data: { type, karat: parseInt(karat), weight: parseFloat(weight), buyPrice: parseFloat(buyPrice), date: new Date(date) }
+    const data = req.body;
+
+    const updatedAsset = await prisma.asset.update({
+      where: { id: id },
+      data: {
+        subType: data.itemType, // الواجهة ترسل itemType، ونحن نحفظها في subType
+        karat: parseInt(data.karat) || 24,
+        weight: parseFloat(data.weight),
+        buyPrice: parseFloat(data.buyPrice),
+        date: new Date(data.date),
+        description: data.notes // الواجهة ترسل notes، ونحن نحفظها في description
+      }
     });
-    res.status(200).json(updated);
+
+    // نعيد البيانات للواجهة بنفس الأسماء التي تفهمها
+    res.json({
+      ...updatedAsset,
+      itemType: updatedAsset.subType,
+      notes: updatedAsset.description
+    });
   } catch (error) {
-    res.status(500).json({ error: 'خطأ في التعديل' });
+    console.error("Error updating gold:", error);
+    res.status(500).json({ error: "خطأ في تعديل بيانات الذهب" });
   }
 };
 
+// 3. حذف ذهب
 exports.deleteGold = async (req, res) => {
   try {
-    const { id } = req.params;
-    await prisma.goldInvestment.delete({ where: { id } });
-    res.status(200).json({ message: 'تم الحذف' });
+    await prisma.asset.delete({ where: { id: req.params.id } });
+    res.json({ message: "تم الحذف بنجاح" });
   } catch (error) {
-    res.status(500).json({ error: 'خطأ في الحذف' });
+    res.status(500).json({ error: "خطأ في الحذف" });
   }
 };
+
+

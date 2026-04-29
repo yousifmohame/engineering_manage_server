@@ -11,19 +11,18 @@ const prisma = new PrismaClient({ adapter });
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const generateHash = (bankAccountId, date, amount, type, description) => {
-  const dataString = `${bankAccountId}_${date}_${amount}_${type}_${description}`;
+const generateHash = (accountId, date, amount, type, description) => {
+  const dataString = `${accountId}_${date}_${amount}_${type}_${description}`;
   return crypto.createHash("sha256").update(dataString).digest("hex");
 };
 
-// ✅ 1. تحليل كشف الحساب وتحديث الرصيد التلقائي
+// 1. تحليل كشف الحساب وتحديث الرصيد التلقائي
 exports.analyzeStatement = async (req, res) => {
   try {
     const { bankAccountId } = req.body;
     const file = req.file;
 
-    if (!file || !bankAccountId)
-      return res.status(400).json({ error: "بيانات مفقودة" });
+    if (!file || !bankAccountId) return res.status(400).json({ error: "بيانات مفقودة" });
 
     const fileBuffer = fs.readFileSync(file.path);
     const mimeType = file.mimetype;
@@ -46,76 +45,76 @@ exports.analyzeStatement = async (req, res) => {
     const parsedTransactions = JSON.parse(response.text);
 
     const transactionsToInsert = parsedTransactions.map((tx) => ({
-      bankAccountId,
-      type: tx.type,
+      accountId: bankAccountId,
+      type: tx.type === "إيداع" ? "INCOME" : "EXPENSE",
       amount: parseFloat(tx.amount),
       description: tx.description,
       date: new Date(tx.date),
-      transactionHash: generateHash(
-        bankAccountId,
-        tx.date,
-        tx.amount,
-        tx.type,
-        tx.description,
-      ),
+      transactionHash: generateHash(bankAccountId, tx.date, tx.amount, tx.type, tx.description),
     }));
 
-    const result = await prisma.bankTransaction.createMany({
+    const result = await prisma.transaction.createMany({
       data: transactionsToInsert,
       skipDuplicates: true,
     });
 
-    // 🌟 السحر المحاسبي: إعادة حساب رصيد البنك بعد إضافة حركات الكشف
-    const allTx = await prisma.bankTransaction.findMany({
-      where: { bankAccountId },
-    });
-    const newBalance = allTx.reduce(
-      (sum, t) => (t.type === "إيداع" ? sum + t.amount : sum - t.amount),
-      0,
-    );
+    // إعادة حساب رصيد البنك
+    const allTx = await prisma.transaction.findMany({ where: { accountId: bankAccountId } });
+    const newBalance = allTx.reduce((sum, t) => (t.type === "INCOME" ? sum + t.amount : sum - t.amount), 0);
 
-    await prisma.bankAccount.update({
+    await prisma.financialAccount.update({
       where: { id: bankAccountId },
       data: { balance: newBalance },
     });
 
     fs.unlinkSync(file.path);
-    res.json({
-      message: "تم التحليل",
-      totalFound: parsedTransactions.length,
-      added: result.count,
-      skipped: parsedTransactions.length - result.count,
-    });
+    res.json({ message: "تم التحليل", added: result.count });
   } catch (error) {
     if (req.file && req.file.path) fs.unlinkSync(req.file.path);
-    res.status(500).json({ error: "خطأ في التحليل بالذكاء الاصطناعي" });
+    console.error(error);
+    res.status(500).json({ error: "خطأ في التحليل" });
   }
 };
 
-// ✅ 2. جلب الحسابات (شاملة كل الحركات بدلاً من 5 فقط لتفاصيل الحساب)
+// 2. جلب الحسابات البنكية
 exports.getAccounts = async (req, res) => {
   try {
-    const accounts = await prisma.bankAccount.findMany({
+    const accounts = await prisma.financialAccount.findMany({
+      where: { type: "BANK" },
       include: { transactions: { orderBy: { date: "desc" } } },
     });
+    
+    // 🌟 ترجمة الحركات والمرفقات للواجهة
+    const formattedAccounts = accounts.map(acc => ({
+      ...acc,
+      transactions: acc.transactions.map(t => ({
+        ...t,
+        type: t.type === "INCOME" ? "إيداع" : "سحب",
+        attachment: t.attachmentUrl // ✨ السر هنا أيضاً
+      }))
+    }));
+
     const totalAllBanks = accounts.reduce((sum, acc) => sum + acc.balance, 0);
-    res.json({ accounts, totalAllBanks });
+    res.json({ accounts: formattedAccounts, totalAllBanks });
   } catch (error) {
+    console.error("Error fetching bank accounts:", error);
     res.status(500).json({ error: "خطأ في جلب الحسابات" });
   }
 };
 
-// ✅ 3. إنشاء حساب
+// 3. إنشاء حساب بنكي
 exports.createAccount = async (req, res) => {
   try {
     const data = req.body;
-    const account = await prisma.bankAccount.create({
+    const account = await prisma.financialAccount.create({
       data: {
-        ...data,
-        balance: parseFloat(data.balance),
-        depositFees: parseFloat(data.depositFees || 0),
-        exchangeRateUSD: parseFloat(data.exchangeRateUSD || 0.2667),
-        exchangeRateEGP: parseFloat(data.exchangeRateEGP || 12.8),
+        name: data.bankName || "بنك جديد",
+        type: "BANK",
+        accountNumber: data.accountNumber,
+        iban: data.iban,
+        swiftCode: data.swiftCode,
+        currency: data.currency || "EGP",
+        balance: parseFloat(data.balance || 0),
       },
     });
     res.status(201).json(account);
@@ -124,33 +123,33 @@ exports.createAccount = async (req, res) => {
   }
 };
 
-// ✅ 4. إضافة حركة يدوية (تدعم المرفقات)
+// 4. إضافة حركة يدوية
 exports.addTransaction = async (req, res) => {
   try {
-    const { bankAccountId, type, amount, description, date, referenceNumber } =
-      req.body;
+    const { bankAccountId, type, amount, description, date, referenceNumber } = req.body;
     const numAmount = parseFloat(amount);
-    let attachment = null;
+    let attachmentUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-    if (req.file) attachment = `/uploads/${req.file.filename}`;
-
-    const transaction = await prisma.bankTransaction.create({
-      data: {
-        bankAccountId,
-        type,
-        amount: numAmount,
-        description,
-        referenceNumber,
-        attachment,
-        date: new Date(date),
-      },
-    });
-
+    const dbType = type === "إيداع" ? "INCOME" : "EXPENSE";
     const balanceChange = type === "إيداع" ? numAmount : -numAmount;
-    await prisma.bankAccount.update({
-      where: { id: bankAccountId },
-      data: { balance: { increment: balanceChange } },
-    });
+
+    const [transaction, account] = await prisma.$transaction([
+      prisma.transaction.create({
+        data: {
+          accountId: bankAccountId,
+          type: dbType,
+          amount: numAmount,
+          description,
+          referenceNumber,
+          attachmentUrl,
+          date: new Date(date),
+        },
+      }),
+      prisma.financialAccount.update({
+        where: { id: bankAccountId },
+        data: { balance: { increment: balanceChange } },
+      })
+    ]);
 
     res.status(201).json(transaction);
   } catch (error) {
@@ -158,77 +157,79 @@ exports.addTransaction = async (req, res) => {
   }
 };
 
-// ✅ 5. تعديل حركة (مع تسوية الرصيد تلقائياً)
 exports.updateTransaction = async (req, res) => {
   try {
     const { id } = req.params;
     const { type, amount, description, date, referenceNumber } = req.body;
     const newAmount = parseFloat(amount);
 
-    const oldTx = await prisma.bankTransaction.findUnique({ where: { id } });
+    // 1. جلب الحركة القديمة لمعرفة قيمتها وتأثيرها
+    const oldTx = await prisma.transaction.findUnique({ where: { id } });
     if (!oldTx) return res.status(404).json({ error: "الحركة غير موجودة" });
 
-    let attachment = oldTx.attachment;
-    if (req.file) attachment = `/uploads/${req.file.filename}`;
+    // التأكد من المرفقات
+    let attachmentUrl = oldTx.attachmentUrl;
+    if (req.file) attachmentUrl = `/uploads/${req.file.filename}`;
 
-    // عكس تأثير الحركة القديمة من الرصيد
-    const reverseOld = oldTx.type === "إيداع" ? -oldTx.amount : oldTx.amount;
-    // إضافة تأثير الحركة الجديدة
+    // 2. المعادلة المحاسبية: عكس القديم وتطبيق الجديد
+    const reverseOld = oldTx.type === "INCOME" ? -oldTx.amount : oldTx.amount;
+    const dbType = type === "إيداع" ? "INCOME" : "EXPENSE";
     const applyNew = type === "إيداع" ? newAmount : -newAmount;
+    
     const netBalanceChange = reverseOld + applyNew;
 
+    // 3. تطبيق التعديل على الحركة والرصيد
     await prisma.$transaction([
-      prisma.bankTransaction.update({
+      prisma.transaction.update({
         where: { id },
         data: {
-          type,
+          type: dbType,
           amount: newAmount,
           description,
           referenceNumber,
-          attachment,
+          attachmentUrl,
           date: new Date(date),
         },
       }),
-      prisma.bankAccount.update({
-        where: { id: oldTx.bankAccountId },
+      prisma.financialAccount.update({
+        where: { id: oldTx.accountId },
         data: { balance: { increment: netBalanceChange } },
       }),
     ]);
 
-    res.json({ message: "تم التعديل والتسوية" });
+    res.json({ message: "تم التعديل والتسوية بنجاح" });
   } catch (error) {
+    console.error("Error updating bank tx:", error);
     res.status(500).json({ error: "خطأ في التعديل" });
   }
 };
 
-// ✅ 6. حذف حركة (مع إرجاع الرصيد)
+// 5. حذف حركة
 exports.deleteTransaction = async (req, res) => {
   try {
-    const tx = await prisma.bankTransaction.findUnique({
-      where: { id: req.params.id },
-    });
+    const tx = await prisma.transaction.findUnique({ where: { id: req.params.id } });
     if (!tx) return res.status(404).json({ error: "غير موجودة" });
 
-    const balanceChange = tx.type === "إيداع" ? -tx.amount : tx.amount;
+    const balanceChange = tx.type === "INCOME" ? -tx.amount : tx.amount;
 
     await prisma.$transaction([
-      prisma.bankTransaction.delete({ where: { id: tx.id } }),
-      prisma.bankAccount.update({
-        where: { id: tx.bankAccountId },
+      prisma.transaction.delete({ where: { id: tx.id } }),
+      prisma.financialAccount.update({
+        where: { id: tx.accountId },
         data: { balance: { increment: balanceChange } },
       }),
     ]);
 
-    res.json({ message: "تم حذف الحركة وتحديث الرصيد" });
+    res.json({ message: "تم الحذف" });
   } catch (error) {
     res.status(500).json({ error: "خطأ في الحذف" });
   }
 };
 
-// ✅ 7. حذف حساب بنكي بالكامل
+// 6. حذف الحساب
 exports.deleteAccount = async (req, res) => {
   try {
-    await prisma.bankAccount.delete({ where: { id: req.params.id } });
+    await prisma.financialAccount.delete({ where: { id: req.params.id } });
     res.json({ message: "تم الحذف" });
   } catch (error) {
     res.status(500).json({ error: "خطأ في الحذف" });
