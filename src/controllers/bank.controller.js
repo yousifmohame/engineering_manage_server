@@ -84,13 +84,14 @@ exports.getAccounts = async (req, res) => {
       include: { transactions: { orderBy: { date: "desc" } } },
     });
     
-    // 🌟 ترجمة الحركات والمرفقات للواجهة
+    // 🌟 تجهيز الحسابات والحركات لتناسب الواجهة الأمامية
     const formattedAccounts = accounts.map(acc => ({
       ...acc,
+      accountName: acc.name, // توجيه حقل name من الداتا بيز ليكون accountName في الواجهة
       transactions: acc.transactions.map(t => ({
         ...t,
         type: t.type === "INCOME" ? "إيداع" : "سحب",
-        attachment: t.attachmentUrl // ✨ السر هنا أيضاً
+        attachment: t.attachmentUrl 
       }))
     }));
 
@@ -102,23 +103,32 @@ exports.getAccounts = async (req, res) => {
   }
 };
 
-// 3. إنشاء حساب بنكي
+// 3. إنشاء حساب بنكي (محدث لدعم الحقول الجديدة)
 exports.createAccount = async (req, res) => {
   try {
     const data = req.body;
     const account = await prisma.financialAccount.create({
       data: {
-        name: data.bankName || "بنك جديد",
+        name: data.accountName || "وصف غير محدد", // اسم/وصف الحساب
+        bankName: data.bankName || "بنك جديد",     // اسم البنك
         type: "BANK",
-        accountNumber: data.accountNumber,
-        iban: data.iban,
-        swiftCode: data.swiftCode,
-        currency: data.currency || "EGP",
+        currency: data.currency || "SAR",
         balance: parseFloat(data.balance || 0),
+        
+        // الحقول البنكية
+        accountNumber: data.accountNumber || null,
+        iban: data.iban || null,
+        swiftCode: data.swiftCode || null,
+        
+        // الحقول المالية الجديدة (مع تحويلها إلى أرقام)
+        depositFees: parseFloat(data.depositFees || 0),
+        exchangeRateUSD: parseFloat(data.exchangeRateUSD || 0.2667),
+        exchangeRateEGP: parseFloat(data.exchangeRateEGP || 12.8),
       },
     });
     res.status(201).json(account);
   } catch (error) {
+    console.error("Error creating account:", error);
     res.status(500).json({ error: "خطأ في الإنشاء" });
   }
 };

@@ -23,21 +23,29 @@ model User {
 // ---------------------------------------------------------
 // 2. الحسابات المالية المركزية (تدمج البنوك والخزنة)
 // ---------------------------------------------------------
+// ---------------------------------------------------------
+// 2. الحسابات المالية المركزية (تدمج البنوك والخزنة)
+// ---------------------------------------------------------
 model FinancialAccount {
-  id       String @id @default(uuid())
-  name     String // اسم الحساب (مثال: خزنة البيت، البنك الأهلي، CIB)
+  id       String  @id @default(uuid())
+  name     String // اسم/وصف الحساب (مثال: حساب جاري - فرع جدة)
+  bankName String? // اسم البنك (مثال: البنك الأهلي)
   type     String // نوع الحساب: "SAFE" (خزنة)، "BANK" (بنك)
-  currency String @default("SAR") // العملة الافتراضية للحساب
-  balance  Float  @default(0) // الرصيد الحالي
+  currency String  @default("SAR") // العملة الافتراضية
+  balance  Float   @default(0) // الرصيد الحالي
 
-  // بيانات خاصة بالبنوك (تكون فارغة إذا كان الحساب خزنة)
+  // بيانات خاصة بالبنوك
   accountNumber String?
   iban          String?
   swiftCode     String?
 
-  // ✨ تحديث: العلاقات مع المعاملات (المسحوبة والمودعة)
-  transactions Transaction[] @relation("AccountTransactions") // المعاملات العادية والمسحوبات
-  transfersIn  Transaction[] @relation("IncomingTransfers") // التحويلات الواردة لهذا الحساب
+  // ✨ الحقول الجديدة للرسوم وأسعار الصرف
+  depositFees     Float? @default(0)
+  exchangeRateUSD Float? @default(0.2667)
+  exchangeRateEGP Float? @default(12.8)
+
+  transactions Transaction[] @relation("AccountTransactions")
+  transfersIn  Transaction[] @relation("IncomingTransfers")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
