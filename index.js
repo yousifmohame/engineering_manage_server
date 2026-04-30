@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path"); // 🌟 خطوة 1: استدعاء مكتبة path للتعامل مع مسارات الملفات بأمان
 require("dotenv").config();
 
 const app = express();
@@ -7,13 +8,16 @@ const PORT = process.env.PORT || 5001;
 
 app.use(cors());
 app.use(express.json());
-// أضف هذا السطر لخدمة الملفات المرفوعة
-app.use('/uploads', express.static('uploads'));
+
+// 🌟 خطوة 2: تعديل المسار ليتطابق مع الواجهة الأمامية (/api/uploads) واستخدام path.join
+// الدالة __dirname تجلب مسار المجلد الحالي الذي يعمل فيه الخادم
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // --- مسارات الـ API (Routes) ---
 // استدعاء مسار الخزنة
 const safeRoutes = require("./src/routes/safe.routes");
 
-// إخبار الخادم بأن أي طلب يبدأ بـ /api/safe يجب توجيهه إلى safeRoutes
+// إخبار الخادم بأن أي طلب يبدأ بـ /api/... يجب توجيهه إلى المسار المناسب
 app.use("/api/dashboard", require("./src/routes/dashboard.routes"));
 app.use("/api/safe", safeRoutes);
 app.use('/api/expenses', require('./src/routes/expense.routes'));
@@ -26,6 +30,7 @@ app.use('/api/files', require('./src/routes/file.routes'));
 app.use('/api/ai', require('./src/routes/ai.routes'));
 app.use('/api/real-estate', require('./src/routes/realEstate.routes'));
 app.use('/api/partners', require('./src/routes/partner.routes'));
+
 // مسار تجريبي للتأكد من عمل الخادم
 app.get("/", (req, res) => {
   res.send("خادم مديرتي المالية يعمل بنجاح!");
