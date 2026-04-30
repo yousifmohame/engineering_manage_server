@@ -182,3 +182,93 @@ model File {
 
   createdAt DateTime @default(now())
 }
+
+// نموذج يمثل الملف أو المجلد
+model FileNode {
+  id       String  @id @default(uuid())
+  name     String // اسم الملف أو المجلد
+  isFolder Boolean @default(false) // هل هو مجلد أم ملف؟
+  mimeType String? // نوع الملف (مثال: application/pdf)
+  size     Int? // حجم الملف بالبايت
+  url      String? // مسار الملف الحالي على السيرفر
+
+  // لدعم المجلدات المتداخلة (مجلد داخل مجلد)
+  parentId String?
+  parent   FileNode?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children FileNode[] @relation("FolderChildren")
+
+  // لدعم الإصدارات المتعددة للملف
+  versions FileVersion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// نموذج لتتبع التعديلات (Versions) لكل ملف
+model FileVersion {
+  id         String   @id @default(uuid())
+  fileNodeId String
+  fileNode   FileNode @relation(fields: [fileNodeId], references: [id], onDelete: Cascade)
+
+  url        String // مسار هذه النسخة القديمة
+  size       Int // حجم هذه النسخة
+  versionNum Int // رقم الإصدار (1, 2, 3...)
+
+  createdAt DateTime @default(now())
+}
+
+// جدول لحفظ سجل تحليلات الذكاء الاصطناعي
+model AiAnalysisHistory {
+  id        String   @id @default(uuid())
+  prompt    String // السؤال الذي طرحه المستخدم
+  response  String // إجابة الذكاء الاصطناعي
+  createdAt DateTime @default(now()) // تاريخ ووقت التحليل
+}
+
+// جدول إدارة العقارات
+model RealEstate {
+  id              String              @id @default(uuid())
+  name            String // اسم العقار (مثال: شقة التجمع)
+  type            String? // نوع العقار (شقة، فيلا، إلخ)
+  location        String? // الموقع
+  status          String              @default("متاح") // الحالة
+  totalPrice      Float // السعر الإجمالي
+  currency        String              @default("SAR") // العملة
+  paidAmount      Float               @default(0) // الدفعة المقدمة / المدفوع
+  remainingAmount Float               @default(0) // المتبقي
+  progress        Float               @default(0) // نسبة السداد المئوية
+  notes           String? // ملاحظات إضافية
+  imageUrl        String?
+  partners        RealEstatePartner[] @relation("RealEstateToPartner")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// جدول شركاء العقارات (تم تغيير الاسم لتجنب التعارض)
+model RealEstatePartner {
+  id         String @id @default(uuid())
+  name       String // اسم الشريك
+  percentage Float // نسبة الشراكة المئوية
+
+  // العلاقة مع العقارات (شريك واحد يمكن أن يرتبط بعدة عقارات)
+  properties RealEstate[] @relation("RealEstateToPartner")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// 8. الحركات المالية العامة (مخصص للوحة التحكم لعدم التعارض)
+// ---------------------------------------------------------
+model FinancialMovement {
+  id     String   @id @default(uuid())
+  title  String // عنوان الحركة (مثال: راتب، إيجار، صيانة)
+  amount Float // المبلغ
+  type   String // النوع: "INCOME" (دخل) أو "EXPENSE" (مصروف)
+  date   DateTime @default(now()) // تاريخ الحركة
+  notes  String? // ملاحظات إضافية
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
